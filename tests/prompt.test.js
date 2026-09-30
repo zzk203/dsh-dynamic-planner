@@ -192,3 +192,26 @@ describe('动态 context（今日摘要）', () => {
     assert.ok(text.length < 900, `摘要长度 ${text.length} 超出预算：多的条目应该被折叠成计数`)
   })
 })
+
+// ───────────────────────── §4.5 调节规则必须在场 ─────────────────────────
+
+describe('§4.5 难度调节规则写在了 section 里', () => {
+  it('加量、减量、最小剂量三件事都有交代', () => {
+    const text = buildSectionText()
+    assert.match(text, /加量/, '要说清完成得好会加量')
+    assert.match(text, /减量/, '要说清完不成会减量')
+    assert.match(text, /最小剂量/, '要有不可再降的下限')
+  })
+
+  it('要求不告知用户具体数值（否则就从"静默"变回"压力"了）', () => {
+    assert.match(buildSectionText(), /不要.*报出具体数字|不要告诉用户/)
+  })
+
+  it('点明最小剂量是防"无声停摆"的安全网，而不只是一个参数', () => {
+    assert.match(buildSectionText(), /停摆/)
+  })
+
+  it('明确长期目标不做超期预警（与 mode=deadline 划清界限）', () => {
+    assert.match(buildSectionText(), /不参与.*赶不上|不参与.*预警/)
+  })
+})
