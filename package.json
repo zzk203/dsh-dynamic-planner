@@ -19,7 +19,7 @@
     "cordis.patch.yml"
   ],
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test"
   },
   "dsh": {
     "bundle": {
