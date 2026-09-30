@@ -426,3 +426,67 @@ describe('铁律四全局守卫', { skip: missing ? '环境里没有 react / rea
     }
   })
 })
+
+// ───────────────────────── 随手添加的结果必须看得见 ─────────────────────────
+
+describe('随手添加的待办必须出现在面板上', { skip: missing ? '环境里没有 react / react-dom' : false }, () => {
+  const todayWithPool = {
+    date: '2026-09-30',
+    plan: { items: [{ id: 'i1', title: '背单词', estimateMin: 10, status: 'pending', note: '', reason: '' }] },
+    pool: [
+      { id: 't1', title: '吃维生素d', estimateMin: 15, goalId: null, goalTitle: null },
+      { id: 't2', title: '预约体检', estimateMin: 20, goalId: 'g1', goalTitle: '健康' },
+    ],
+  }
+
+  it('池里的条目要渲染出来 —— 否则"随手添加"点了之后屏幕上什么都没发生', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.TodayView, {
+      today: todayWithPool, onRefresh: async () => {}, onError: () => {},
+    }))
+    assert.match(markup, /吃维生素d/, '刚添加的待办必须立刻可见')
+    assert.match(markup, /预约体检/)
+    assert.match(markup, /15 分钟/)
+  })
+
+  it('区块标题要说明它们还没排进今天，而不是混进今日计划里骗人', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.TodayView, {
+      today: todayWithPool, onRefresh: async () => {}, onError: () => {},
+    }))
+    assert.match(markup, /还没排进今天/)
+  })
+
+  it('告诉用户下一步该怎么办（只有对话能排计划）', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.TodayView, {
+      today: todayWithPool, onRefresh: async () => {}, onError: () => {},
+    }))
+    assert.match(markup, /排今天的计划/)
+  })
+
+  it('池为空时不渲染这个区块（不要留一个空标题）', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.TodayView, {
+      today: { date: '2026-09-30', plan: { items: [] }, pool: [] },
+      onRefresh: async () => {}, onError: () => {},
+    }))
+    assert.ok(!markup.includes('还没排进今天'))
+  })
+
+  it('池里的条目带目标标签时显示出来（与今日计划里的呈现一致）', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.TodayView, {
+      today: todayWithPool, onRefresh: async () => {}, onError: () => {},
+    }))
+    assert.match(markup, /健康/)
+  })
+
+  it('添加框仍然在（回归：别为了修这个把入口弄丢了）', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.TodayView, {
+      today: todayWithPool, onRefresh: async () => {}, onError: () => {},
+    }))
+    assert.match(markup, /随手加一条待办/)
+  })
+})

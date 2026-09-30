@@ -49,6 +49,9 @@ window.__ModuleLoader__.load({
       .pl-section { margin-top: 24px; }
       .pl-section-title { font-size: 12px; letter-spacing: .04em; text-transform: none;
                           color: var(--dsw-alias-label-secondary); margin: 0 0 8px; font-weight: 500; }
+      .pl-hint { font-size: 12px; color: var(--dsw-alias-label-secondary); margin-top: 8px; }
+      .pl-hint code { background: var(--dsw-alias-bg-layer-2); padding: 1px 5px; border-radius: 4px;
+                      border: 1px solid var(--dsw-alias-border-l1); font-size: 12px; }
       .pl-item { display: flex; align-items: flex-start; gap: 10px; padding: 11px 0;
                  border-bottom: 1px solid var(--dsw-alias-border-l1); }
       .pl-item:last-child { border-bottom: 0; }
@@ -192,18 +195,23 @@ window.__ModuleLoader__.load({
     function QuickAdd({ onAdd }) {
       const [title, setTitle] = useState('')
       const [busy, setBusy] = useState(false)
+      // busy 是 state，两次极快的回车可能在同一帧里都通过判断，于是添加两条。
+      // 用 ref 做真正的闸门 —— 实测出现过用户以为没生效、连点两次产生重复。
+      const inFlight = useRef(false)
 
       const submit = useCallback(async () => {
         const value = title.trim()
-        if (value === '' || busy) return
+        if (value === '' || inFlight.current) return
+        inFlight.current = true
         setBusy(true)
         try {
           await onAdd(value)
           setTitle('')
         } finally {
+          inFlight.current = false
           setBusy(false)
         }
-      }, [busy, onAdd, title])
+      }, [onAdd, title])
 
       return h('div', { className: 'pl-add' },
         h('input', {
@@ -246,6 +254,7 @@ window.__ModuleLoader__.load({
       }, [onError, onRefresh])
 
       const items = today?.plan?.items ?? []
+      const pool = today?.pool ?? []
 
       return h('div', null,
         items.length === 0
@@ -255,7 +264,37 @@ window.__ModuleLoader__.load({
               ' 就可以 —— 我会先看看前几天实际做得怎么样，再决定今天排什么。')
           : h('div', { className: 'pl-card' }, items.map(item => h(ItemRow, { key: item.id, item, onPatch: patch }))),
 
+        // 随手添加的待办落进任务池，所以池必须在这里可见 ——
+        // 否则用户点了"添加"之后屏幕上什么都没有，会以为没生效（实测踩到过）。
+        pool.length > 0
+          ? h('div', { className: 'pl-section' },
+              h('div', { className: 'pl-section-title' }, `还没排进今天的 · ${pool.length} 条`),
+              h('div', { className: 'pl-card' }, pool.map(task => h(PoolRow, { key: task.id, task }))),
+              h('div', { className: 'pl-hint' },
+                '在对话里说一句 ',
+                h('code', null, '排今天的计划'),
+                '，我会把它们一起考虑进去。'),
+            )
+          : null,
+
         h(QuickAdd, { onAdd: add }),
+      )
+    }
+
+    /**
+     * 池里的一条。刻意是只读的：
+     * 它还没被排进今天，在这里勾"完成"没有意义；而"把哪条排进今天"是对话那边的事。
+     */
+    function PoolRow({ task }) {
+      return h('div', { className: 'pl-item' },
+        h('div', { className: 'pl-body' },
+          h('div', { className: 'pl-row1' },
+            h('span', { className: 'pl-item-title' }, task.title),
+            h('span', { className: 'pl-spacer' }),
+            task.goalTitle ? h('span', { className: 'pl-chip' }, task.goalTitle) : null,
+            h('span', { className: 'pl-meta' }, `${task.estimateMin} 分钟`),
+          ),
+        ),
       )
     }
 

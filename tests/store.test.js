@@ -784,3 +784,15 @@ describe('顺延次数不含今天', () => {
     assert.equal(view.pool[0].deferCount, 1)
   })
 })
+
+describe('今日视图里的池条目带目标标题', () => {
+  it('池条目给出 goalTitle，供面板显示归属（与计划条目一致）', () => {
+    const data = emptyData()
+    const goal = saveGoal(data, { title: '健康', mode: 'longterm' }, '2026-05-10')
+    saveTask(data, { title: '预约体检', goalId: goal.id, estimateMin: 20 })
+    saveTask(data, { title: '吃维生素d', estimateMin: 15 })
+    const pool = todayView(data, '2026-05-10').pool
+    assert.equal(pool.find(t => t.title === '预约体检').goalTitle, '健康')
+    assert.equal(pool.find(t => t.title === '吃维生素d').goalTitle, null)
+  })
+})
