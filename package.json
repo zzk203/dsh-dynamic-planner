@@ -1,0 +1,38 @@
+{
+  "name": "dsh-dynamic-planner",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "动态日程表 —— 对话驱动、会随时间调整难度与量的个人计划插件",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml"
+  ],
+  "scripts": {
+    "test": "node --test tests/"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  },
+  "icon": "./icon.svg"
+}

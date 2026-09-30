@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Dynamic Planner",
+    "description": "A conversation-driven personal schedule: it reads how past days actually went, regenerates today's plan, and quietly tunes difficulty and volume over time."
+  }
+}

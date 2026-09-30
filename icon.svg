@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Dynamic Planner">
+  <rect x="3" y="6" width="26" height="23" rx="5" fill="none" stroke="#4f7cff" stroke-width="2.2"/>
+  <path d="M3 13h26" stroke="#4f7cff" stroke-width="2.2"/>
+  <path d="M10 3v5M22 3v5" stroke="#4f7cff" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M9.5 20.5l3.2 3.2 7-7.4" fill="none" stroke="#2fbf7a" stroke-width="2.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
