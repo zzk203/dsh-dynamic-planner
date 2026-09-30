@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>planner panel · browser harness</title>
+<style>
+  html, body { height: 100%; margin: 0; background: #14161a; color: #e8eaed;
+               font: 14px/1.6 -apple-system, "Segoe UI", "Noto Sans SC", sans-serif; }
+  #sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 48px;
+             border-right: 1px solid #2a2f37; padding-top: 12px; text-align: center; }
+  #root { position: absolute; left: 48px; right: 0; top: 0; bottom: 0; }
+
+  /* 主题 token 的替身：真宿主由主题插件注入，这里必须给同一套变量名，
+     否则面板会退化成无样式的裸 HTML，验证就失去意义。 */
+  :root {
+    --dsw-alias-bg-base: #14161a;
+    --dsw-alias-bg-layer-1: #1b1f26;
+    --dsw-alias-bg-layer-2: #222732;
+    --dsw-alias-bg-overlay: #222732;
+    --dsw-alias-border-l1: #2a2f37;
+    --dsw-alias-border-l2: #3a414d;
+    --dsw-alias-brand-primary: #4f7cff;
+    --dsw-alias-label-primary: #e8eaed;
+    --dsw-alias-label-secondary: #9aa3b2;
+    --dsw-alias-state-error-primary: #f2686b;
+    --dsw-alias-state-idle-primary: #6b7280;
+    --dsw-alias-state-success-primary: #2fbf7a;
+    --dsw-alias-state-warn-primary: #e0a33e;
+  }
+</style>
+</head>
+<body>
+  <div id="sidebar"></div>
+  <div id="root"></div>
+  <pre id="errors" style="position:fixed;left:48px;bottom:0;right:0;margin:0;padding:8px;color:#f2686b;font-size:12px;white-space:pre-wrap"></pre>
+
+  <script src="/react.js"></script>
+  <script src="/react-dom.js"></script>
+  <script>
+    // 假模块加载器：把插件交给加载器的那份定义截下来
+    window.__ModuleLoader__ = { load(spec) { window.__PLUGIN_SPEC__ = spec } }
+  </script>
+  <script src="/client.js"></script>
+  <script>
+    const errors = []
+    const show = (message) => {
+      errors.push(String(message))
+      document.getElementById('errors').textContent = errors.join('\n')
+    }
+    window.addEventListener('error', (event) => show('window.error: ' + event.message))
+
+    try {
+      const spec = window.__PLUGIN_SPEC__
+      if (!spec) throw new Error('client.js 没有调用 __ModuleLoader__.load')
+
+      const plugin = spec.factory((name) => {
+        if (name === 'react') return window.React
+        throw new Error('client.js 请求了未约定的模块：' + name)
+      })
+
+      // 假 ctx：只实现面板真正用到的那两个成员
+      const registered = {}
+      const disposers = []
+      const ctx = {
+        slots: {
+          inject(slotName, callback) { callback() },
+          register(options, Component) {
+            const key = options.name === 'main' ? `main:${options.key}` : `${options.name}:${options.id}`
+            registered[key] = { options, Component }
+          },
+        },
+        effect(callback) {
+          const off = callback()
+          if (typeof off === 'function') disposers.push(off)
+        },
+      }
+
+      plugin.apply(ctx)
+      window.__HARNESS__ = {
+        moduleId: spec.id,
+        inject: plugin.inject,
+        registered: Object.keys(registered),
+        errors,
+      }
+
+      // 侧边栏图标
+      const icon = registered['sidebar.panellist:planner']
+      if (icon) {
+        window.ReactDOM.createRoot(document.getElementById('sidebar'))
+          .render(window.React.createElement(icon.Component, { size: 20, active: true }))
+      } else {
+        show('sidebar.panellist:planner 未注册')
+      }
+
+      // 中央面板
+      const main = registered['main:planner']
+      if (main) {
+        window.ReactDOM.createRoot(document.getElementById('root'))
+          .render(window.React.createElement(main.Component))
+      } else {
+        show('main:planner 未注册')
+      }
+    } catch (error) {
+      show('harness: ' + (error && error.stack ? error.stack : error))
+    }
+  </script>
+</body>
+</html>

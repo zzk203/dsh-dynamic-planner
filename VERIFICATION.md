@@ -363,3 +363,53 @@ tests/harness/page.html   假模块加载器 + 假 ctx，把真实 client.js 挂
 唯独省掉了那层拿不到的 token。它抓到并验证了缺陷 E，也验过勾选落库。
 
 用法：`node tests/harness/serve.mjs`（默认 `127.0.0.1:18999`），然后用 `playwright-cli` 打开。
+
+---
+
+## 缺陷 F · §4.5 的旋钮只写不可读，等于没有
+
+核 §4.5 时起疑，`grep` 了一下"谁读 `goal.dial`"，结果只有写入侧：
+
+```
+lib/store.js  if (input.dial !== undefined) existing.dial = clampDial(...)   ← 写
+lib/store.js  dial: clampDial(input.dial),                                  ← 初始化
+lib/store.js  dial: goal.dial ?? 1,                          ← 只出现在 goalOverview
+lib/tools.js  dial: { ... }                                  ← goal_save 的参数
+```
+
+`goalOverview` 的唯一消费者是面板的 `/goals` 路由，而 `goal_overview` **并不是一个工具**。
+所以从模型的角度看：
+
+- **`goal.dial` 设了就再也读不回来** —— `plan_context` 的目标里只有 `momentum` 与 `pace`
+- **`task.difficulty` 从不出现在任何视图里** —— 而它承载的正是"拆得极细、`tiny` = 轻到不可能失败"
+- 也没有任何东西**消费** `dial`
+
+§4.5 明明白白写着"静默调节难度与量"，但实现里有个旋钮，**没人能拧、也没人能看**。
+纸面规则与实际能力之间断了一节 —— 而这一节在单元测试里完全看不出来，
+因为每一半单独看都是对的。
+
+### 修法
+
+1. 新增 `goalBriefing(data, goal, today)`，由 `plan_context` 使用。长期目标给出：
+   `dial`（旋钮）、`minDailyMinutes`（下限）、`recentDailyMinutes`（上次调节之后实际发生了什么）、
+   `openTaskCount`、`tinyTaskCount`、`criteria`
+2. `todayView.pool` 带上 `difficulty`
+3. section 里点明"调节就落在 dial 这个旋钮上，用 goal_save 传"，并报出两个反馈字段的名字
+
+### 分层的意义（这条比修 bug 本身更重要）
+
+`goalBriefing` 与 `todayView.goals` **刻意不是同一个形状**：
+
+- `todayView` 是**给面板的**，只能有铁律四允许显示的东西
+- `goalBriefing` 是**给模型的**，包含它被要求不要显示给用户的反馈
+
+这样"面板拿不到这些字段"就是**结构上的事实**，而不是指望渲染层每次都自觉。
+有一条用例守着它：`todayView` 里不得出现 `dial` / `minDailyMinutes` / `recentDailyMinutes` / `tinyTaskCount`。
+
+这正是铁律四那两半的落地：**账本对模型可见，目标对用户只留正向积累。**
+
+### 一个流程上的教训
+
+宿主侧（`lib/`）的改动要**攒一批再让用户重启**。ESM 缓存按 URL，翻插件开关不重载；
+这次我在用户重启后又零零散散改了三次 `lib/`，等于让他为同一个项目重启三次。
+界面侧（`client.js`）没有这个问题 —— 刷新页面即可。

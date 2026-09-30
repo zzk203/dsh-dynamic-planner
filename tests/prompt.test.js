@@ -232,3 +232,18 @@ describe('行为测试暴露的缺口（一次独立会话跑真实对话时踩�
     assert.match(text, /plan_item_update/, '要给出更省事的替代动作，而不只是说"别这么做"')
   })
 })
+
+describe('§4.5 要告诉模型旋钮在哪、依据是什么', () => {
+  it('点明 dial 就是调量的旋钮（不然拿到数据也不知道那是用来拧的）', () => {
+    const text = buildSectionText()
+    assert.match(text, /dial/)
+    assert.match(text, /goal_save/)
+  })
+
+  it('点明调量的两个依据来自 plan_context', () => {
+    const text = buildSectionText()
+    assert.match(text, /minDailyMinutes/)
+    assert.match(text, /recentDailyMinutes/)
+    assert.match(text, /盲调/, '要说清没有反馈就是盲调')
+  })
+})

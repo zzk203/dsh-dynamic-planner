@@ -21,10 +21,12 @@ import {
   daysBetween,
   emptyData,
   getPlan,
+  goalBriefing,
   goalMomentum,
   goalOverview,
   goalPace,
   loadData,
+  MIN_DOSE_MINUTES,
   pendingBefore,
   quickAddTask,
   recentStats,
@@ -794,5 +796,77 @@ describe('今日视图里的池条目带目标标题', () => {
     const pool = todayView(data, '2026-05-10').pool
     assert.equal(pool.find(t => t.title === '预约体检').goalTitle, '健康')
     assert.equal(pool.find(t => t.title === '吃维生素d').goalTitle, null)
+  })
+})
+
+// ───────────────────────── §4.5 的旋钮必须可读，否则等于没有 ─────────────────────────
+
+describe('目标简报：模型决策需要、但面板不该显示的东西', () => {
+  function longtermSetup() {
+    const data = emptyData()
+    const goal = saveGoal(data, {
+      title: '学英语', mode: 'longterm', criteria: '能不看字幕看懂一集美剧',
+    }, '2026-05-01')
+    saveTask(data, { title: '背 10 个单词', goalId: goal.id, estimateMin: 10, difficulty: 'tiny' })
+    saveTask(data, { title: '听播客', goalId: goal.id, estimateMin: 5, difficulty: 'tiny' })
+    saveTask(data, { title: '写一篇短文', goalId: goal.id, estimateMin: 30, difficulty: 'medium' })
+    // 近 7 天（05-03 ~ 05-09）各完成 10 分钟，合计 70
+    for (const date of ['2026-05-03', '2026-05-04', '2026-05-05', '2026-05-06',
+      '2026-05-07', '2026-05-08', '2026-05-09']) {
+      const plan = writePlan(data, date, [{ title: '练习', goalId: goal.id, estimateMin: 10 }], date)
+      updatePlanItem(data, date, plan.items[0].id, { status: 'done' })
+    }
+    return { data, goal }
+  }
+
+  it('长期目标给出 dial、最小剂量与实际投入 —— 旋钮可读才谈得上"调节"', () => {
+    const { data, goal } = longtermSetup()
+    const briefing = goalBriefing(data, goal, '2026-05-10')
+    assert.equal(briefing.dial, 1, '旋钮本身')
+    assert.equal(briefing.minDailyMinutes, MIN_DOSE_MINUTES, '不可再降的下限')
+    assert.equal(briefing.recentDailyMinutes, 10, '近 7 天日均（70 / 7）')
+  })
+
+  it('给出池里条数与其中"轻到不可能失败"的条数 —— 否则 tiny 这个粒度排计划时用不上', () => {
+    const { data, goal } = longtermSetup()
+    const briefing = goalBriefing(data, goal, '2026-05-10')
+    assert.equal(briefing.openTaskCount, 3)
+    assert.equal(briefing.tinyTaskCount, 2)
+  })
+
+  it('带出完成标准，模型据它判断该不该提议标完成', () => {
+    const { data, goal } = longtermSetup()
+    assert.equal(goalBriefing(data, goal, '2026-05-10').criteria, '能不看字幕看懂一集美剧')
+  })
+
+  it('有期限目标给 pace，不给 dial（长期目标那套调节不适用）', () => {
+    const data = emptyData()
+    const goal = saveGoal(data, { title: '跑 10 公里', mode: 'deadline', deadline: '2026-06-01' }, '2026-05-10')
+    const briefing = goalBriefing(data, goal, '2026-05-10')
+    assert.notEqual(briefing.pace, null)
+    assert.equal(briefing.momentum, null)
+    assert.equal(briefing.dial, undefined)
+  })
+
+  it('长期目标给 momentum 不给 pace（与今日视图口径一致）', () => {
+    const { data, goal } = longtermSetup()
+    const briefing = goalBriefing(data, goal, '2026-05-10')
+    assert.notEqual(briefing.momentum, null)
+    assert.equal(briefing.pace, null)
+  })
+
+  it('分层守卫：todayView 里**没有**这些模型专用字段，面板拿不到就不会显示', () => {
+    const { data } = longtermSetup()
+    const view = todayView(data, '2026-05-10')
+    for (const leaked of ['dial', 'minDailyMinutes', 'recentDailyMinutes', 'tinyTaskCount']) {
+      assert.ok(!(leaked in view.goals[0]), `todayView 不该带 ${leaked} —— 那是模型专用的反馈`)
+    }
+  })
+
+  it('池条目带 difficulty，模型才知道哪条最轻', () => {
+    const { data } = longtermSetup()
+    const pool = todayView(data, '2026-05-10').pool
+    assert.equal(pool.find(t => t.title === '写一篇短文').difficulty, 'medium')
+    assert.equal(pool.find(t => t.title === '背 10 个单词').difficulty, 'tiny')
   })
 })

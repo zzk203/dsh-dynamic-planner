@@ -534,3 +534,68 @@ describe('工具描述承载的行为护栏', () => {
     assert.equal(again.items.find(item => item.title === '新加的一条').status, 'pending')
   })
 })
+
+// ───────────────────────── 旋钮必须可读（§4.5） ─────────────────────────
+
+describe('plan_context 让 §4.5 的旋钮变得可读可拧', () => {
+  async function seeded() {
+    const store = memoryStore()
+    const tools = toolsFor(store)
+    const goal = await toolNamed(tools, 'goal_save').execute(
+      { title: '学英语', mode: 'longterm', criteria: '能看无字幕剧', dial: 1.2 }, {},
+    )
+    await toolNamed(tools, 'task_add_batch').execute({
+      goalId: goal.id,
+      tasks: [
+        { title: '背 10 个单词', estimateMin: 10, difficulty: 'tiny' },
+        { title: '写一篇短文', estimateMin: 30, difficulty: 'medium' },
+      ],
+    }, {})
+    return { store, tools, goal }
+  }
+
+  it('长期目标带出 dial —— 否则模型设过就再也读不回来，"静默调节"无从谈起', async () => {
+    const { tools } = await seeded()
+    const value = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.equal(value.goals[0].dial, 1.2)
+  })
+
+  it('带出每日最小剂量 —— "减到最小剂量为止"需要一个具体的数才守得住', async () => {
+    const { tools } = await seeded()
+    const value = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.ok(Number.isFinite(value.goals[0].minDailyMinutes))
+    assert.ok(value.goals[0].minDailyMinutes > 0)
+  })
+
+  it('带出近期实际投入与池里条数 —— 调量的两个依据', async () => {
+    const { tools } = await seeded()
+    const value = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.equal(value.goals[0].openTaskCount, 2)
+    assert.equal(value.goals[0].tinyTaskCount, 1)
+    assert.equal(typeof value.goals[0].recentDailyMinutes, 'number')
+  })
+
+  it('带出完成标准 —— 模型据它判断该不该提议标完成', async () => {
+    const { tools } = await seeded()
+    const value = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.equal(value.goals[0].criteria, '能看无字幕剧')
+  })
+
+  it('池条目带出 difficulty —— 否则"拆得极细、轻到不可能失败"在排计划时用不上', async () => {
+    const { tools } = await seeded()
+    const value = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.equal(value.pool.find(task => task.title === '背 10 个单词').difficulty, 'tiny')
+    assert.equal(value.pool.find(task => task.title === '写一篇短文').difficulty, 'medium')
+  })
+
+  it('有期限目标仍然不参与这套调节（不给 dial）', async () => {
+    const store = memoryStore()
+    const tools = toolsFor(store)
+    await toolNamed(tools, 'goal_save').execute(
+      { title: '跑 10 公里', mode: 'deadline', deadline: '2026-06-01' }, {},
+    )
+    const value = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.equal(value.goals[0].dial, undefined)
+    assert.notEqual(value.goals[0].pace, null)
+  })
+})
