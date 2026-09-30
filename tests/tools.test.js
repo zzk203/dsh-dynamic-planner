@@ -407,3 +407,72 @@ describe('真 defineTool 的 schema 校验', { skip: realDefineTool === null ? '
     }
   })
 })
+
+// ───────────────────────── plan_write 与任务池的关联 ─────────────────────────
+
+describe('plan_write 与任务池的关联', () => {
+  async function withGoalAndTask(goalTitle = '学英语') {
+    const store = memoryStore()
+    const tools = toolsFor(store)
+    const goal = await toolNamed(tools, 'goal_save').execute({ title: goalTitle, mode: 'longterm' }, {})
+    return { store, tools, goal }
+  }
+
+  it('标题与池里某条任务完全一致且同属一个目标时，自动关联 —— 否则它明天会被再排一次', async () => {
+    const { store, tools, goal } = await withGoalAndTask()
+    await toolNamed(tools, 'task_save').execute({ title: '背单词', goalId: goal.id, estimateMin: 15 })
+    await toolNamed(tools, 'plan_write').execute({
+      date: TODAY, items: [{ title: '背单词', goalId: goal.id, estimateMin: 15 }],
+    }, {})
+    const context = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.deepEqual(context.pool, [], '同名同目标的任务应已被关联，不再留在池里')
+    assert.equal(store.data.tasks[0].plannedFor, TODAY)
+  })
+
+  it('同名但不同目标时不猜 —— 宁可留在池里，也不要错连', async () => {
+    const { store, tools, goal } = await withGoalAndTask()
+    await toolNamed(tools, 'task_save').execute({ title: '背单词', goalId: goal.id, estimateMin: 15 })
+    await toolNamed(tools, 'plan_write').execute({
+      date: TODAY, items: [{ title: '背单词', estimateMin: 15 }], // 没有 goalId
+    }, {})
+    const context = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.equal(context.pool.length, 1, '目标不一致时不该自动关联')
+  })
+
+  it('池里有两条同名任务时不猜 —— 歧义就该留给人处理', async () => {
+    const { store, tools, goal } = await withGoalAndTask()
+    await toolNamed(tools, 'task_save').execute({ title: '背单词', goalId: goal.id, estimateMin: 15 })
+    await toolNamed(tools, 'task_save').execute({ title: '背单词', goalId: goal.id, estimateMin: 15 })
+    await toolNamed(tools, 'plan_write').execute({
+      date: TODAY, items: [{ title: '背单词', goalId: goal.id, estimateMin: 15 }],
+    }, {})
+    assert.equal(store.data.tasks.filter(task => task.plannedFor === TODAY).length, 0)
+  })
+
+  it('已经带了 taskId 就照用，不做任何猜测', async () => {
+    const { store, tools, goal } = await withGoalAndTask()
+    const first = await toolNamed(tools, 'task_save').execute({ title: '背单词', goalId: goal.id, estimateMin: 15 })
+    await toolNamed(tools, 'task_save').execute({ title: '背单词', goalId: goal.id, estimateMin: 15 })
+    await toolNamed(tools, 'plan_write').execute({
+      date: TODAY, items: [{ taskId: first.id, title: '背单词', goalId: goal.id, estimateMin: 15 }],
+    }, {})
+    assert.equal(store.data.tasks.find(task => task.id === first.id).plannedFor, TODAY)
+  })
+
+  it('自动关联的行为写在了工具描述里（模型能看见会发生什么，而不是被静默处理）', () => {
+    const tools = toolsFor(memoryStore())
+    const description = toolNamed(tools, 'plan_write').description
+    assert.match(description, /自动关联/)
+    assert.match(description, /taskId/)
+  })
+
+  it('池里没有对应任务时，它就是一条临时待办，不影响池', async () => {
+    const { store, tools } = await withGoalAndTask()
+    await toolNamed(tools, 'plan_write').execute({
+      date: TODAY, items: [{ title: '给妈妈打电话', estimateMin: 10 }],
+    }, {})
+    const context = await toolNamed(tools, 'plan_context').execute({ date: TODAY }, {})
+    assert.deepEqual(context.pool, [])
+    assert.equal(store.data.tasks.length, 0)
+  })
+})
