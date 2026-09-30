@@ -15,6 +15,7 @@ import {
   aggregateRange,
   clampDial,
   completeGoal,
+  createStore,
   dateKey,
   daysBetween,
   emptyData,
@@ -33,6 +34,8 @@ import {
   todayView,
   unexplained,
   updatePlanItem,
+  weekStartKey,
+  weeklyAggregate,
   writePlan,
 } from '../lib/store.js'
 
@@ -579,5 +582,80 @@ describe('视图层是铁律四的落点', () => {
     assert.equal(overview.criteria, '能独立跑完 10 公里')
     assert.equal(overview.poolTaskCount, 1)
     assert.equal(overview.deadline, '2026-06-01')
+  })
+})
+
+// ───────────────────────── 按周聚合（温层） ─────────────────────────
+
+describe('按周聚合', () => {
+  it('weekStartKey 落在周一，周日归到本周', () => {
+    assert.equal(weekStartKey('2026-05-04'), '2026-05-04') // 周一
+    assert.equal(weekStartKey('2026-05-06'), '2026-05-04') // 周三
+    assert.equal(weekStartKey('2026-05-10'), '2026-05-04') // 周日仍属本周
+    assert.equal(weekStartKey('2026-05-11'), '2026-05-11') // 下周一
+  })
+
+  it('同一周的多个计划聚成一个桶', () => {
+    const data = emptyData()
+    for (const date of ['2026-05-06', '2026-05-07', '2026-05-08']) {
+      const plan = writePlan(data, date, [{ title: 'x', estimateMin: 20 }], date)
+      updatePlanItem(data, date, plan.items[0].id, { status: 'done' })
+    }
+    const buckets = weeklyAggregate(data, '2026-05-01', '2026-05-10')
+    assert.equal(buckets.length, 1)
+    assert.equal(buckets[0].week, '2026-05-04')
+    assert.equal(buckets[0].to, '2026-05-10')
+    assert.equal(buckets[0].planned, 3)
+    assert.equal(buckets[0].done, 3)
+    assert.equal(buckets[0].doneMinutes, 60)
+  })
+
+  it('跨周的日期分成多个桶并按周升序', () => {
+    const data = emptyData()
+    for (const date of ['2026-05-08', '2026-05-12']) {
+      writePlan(data, date, [{ title: 'x', estimateMin: 10 }], date)
+    }
+    const buckets = weeklyAggregate(data, '2026-05-01', '2026-05-31')
+    assert.deepEqual(buckets.map(bucket => bucket.week), ['2026-05-04', '2026-05-11'])
+  })
+
+  it('区间外的计划不进桶', () => {
+    const data = emptyData()
+    writePlan(data, '2026-04-30', [{ title: 'x', estimateMin: 10 }], '2026-04-30')
+    assert.deepEqual(weeklyAggregate(data, '2026-05-01', '2026-05-31'), [])
+  })
+})
+
+// ───────────────────────── 存储门面 ─────────────────────────
+
+describe('createStore 存储门面', () => {
+  it('read 每次都落到磁盘，不缓存（面板与 LLM 是两个写入方）', async () => {
+    const file = tempFile()
+    const store = createStore(file)
+    await store.update(data => { saveGoal(data, { title: '学英语', mode: 'longterm' }, '2026-05-10') })
+    assert.equal(store.read().goals.length, 1)
+
+    // 绕过这个 store 实例直接改磁盘：如果再读还能看到，说明没有缓存
+    const direct = loadData(file)
+    saveGoal(direct, { title: '跑步', mode: 'longterm' }, '2026-05-10')
+    saveData(file, direct)
+    assert.equal(store.read().goals.length, 2)
+  })
+
+  it('变更函数抛错时不落盘（校验失败不该留下半成品）', async () => {
+    const file = tempFile()
+    const store = createStore(file)
+    await store.update(data => { saveGoal(data, { title: '第一个', mode: 'longterm' }, '2026-05-10') })
+
+    await assert.rejects(
+      () => store.update(data => {
+        saveGoal(data, { title: '会失败的', mode: 'longterm' }, '2026-05-10')
+        throw new Error('校验没过')
+      }),
+      /校验没过/,
+    )
+    const after = store.read()
+    assert.equal(after.goals.length, 1)
+    assert.equal(after.goals[0].title, '第一个')
   })
 })
