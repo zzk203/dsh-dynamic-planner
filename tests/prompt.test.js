@@ -215,3 +215,20 @@ describe('§4.5 难度调节规则写在了 section 里', () => {
     assert.match(buildSectionText(), /不参与.*赶不上|不参与.*预警/)
   })
 })
+
+// ───────────────────────── 行为测试暴露出的两个缺口 ─────────────────────────
+
+describe('行为测试暴露的缺口（一次独立会话跑真实对话时踩到）', () => {
+  it('禁止写占位式 reason —— 模型当时自己造了「待用户说明（尚未追问）」', () => {
+    const text = buildSectionText()
+    assert.match(text, /不要动那条记录|不要写.*占位/)
+    assert.match(text, /留空本身/, '要说清"留空"本身就是有效状态，否则模型会自己发明一个')
+  })
+
+  it('说明今天已有计划时不要整表重写 —— 模型当时重写了一次，抹掉了已完成状态', () => {
+    const text = buildSectionText()
+    assert.match(text, /今天已经有计划|已经有计划时/)
+    assert.match(text, /先看再改/)
+    assert.match(text, /plan_item_update/, '要给出更省事的替代动作，而不只是说"别这么做"')
+  })
+})

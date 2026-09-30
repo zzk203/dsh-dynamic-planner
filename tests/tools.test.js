@@ -476,3 +476,61 @@ describe('plan_write 与任务池的关联', () => {
     assert.equal(store.data.tasks.length, 0)
   })
 })
+
+// ───────────────────────── 工具描述里的两条护栏 ─────────────────────────
+
+describe('工具描述承载的行为护栏', () => {
+  it('plan_item_update 明确禁止写占位 reason，并说清"留空"的含义', () => {
+    const tools = toolsFor(memoryStore())
+    const description = toolNamed(tools, 'plan_item_update').description
+    assert.match(description, /不要调用本工具去写 reason|不要写.*占位/)
+    assert.match(description, /留空本身就表示|留空本身/)
+  })
+
+  it('plan_write 说明已有计划时该怎么做（含"漏掉会消失"这个后果）', () => {
+    const tools = toolsFor(memoryStore())
+    const description = toolNamed(tools, 'plan_write').description
+    assert.match(description, /先看再改/)
+    assert.match(description, /漏掉的未完成条目会真的从今天消失|会真的从今天消失/)
+  })
+
+  it('plan_write 拒绝丢掉已完成条目时，报错要给出可执行的下一步', async () => {
+    const store = memoryStore()
+    const tools = toolsFor(store)
+    const plan = await toolNamed(tools, 'plan_write').execute({
+      date: TODAY, items: [{ title: '打电话', estimateMin: 10 }],
+    }, {})
+    await toolNamed(tools, 'plan_item_update').execute({
+      date: TODAY, itemId: plan.items[0].id, status: 'done',
+    }, {})
+    await assert.rejects(
+      () => toolNamed(tools, 'plan_write').execute({ date: TODAY, items: [{ title: '别的事', estimateMin: 10 }] }, {}),
+      /已完成.*请把它们一并写回|一并写回/s,
+    )
+  })
+
+  it('带 taskId 重排时，已完成状态与备注真的被带过去了（不只是描述里说说）', async () => {
+    const store = memoryStore()
+    const tools = toolsFor(store)
+    const goal = await toolNamed(tools, 'goal_save').execute({ title: '学英语', mode: 'longterm' }, {})
+    const task = await toolNamed(tools, 'task_save').execute({ title: '背单词', goalId: goal.id, estimateMin: 15 }, {})
+    const plan = await toolNamed(tools, 'plan_write').execute({
+      date: TODAY, items: [{ taskId: task.id, title: '背单词', goalId: goal.id, estimateMin: 15 }],
+    }, {})
+    await toolNamed(tools, 'plan_item_update').execute({
+      date: TODAY, itemId: plan.items[0].id, status: 'done', note: '通勤路上背的',
+    }, {})
+    const again = await toolNamed(tools, 'plan_write').execute({
+      date: TODAY,
+      items: [
+        { taskId: task.id, title: '背单词', goalId: goal.id, estimateMin: 15 },
+        { title: '新加的一条', estimateMin: 10 },
+      ],
+    }, {})
+    const kept = again.items.find(item => item.title === '背单词')
+    assert.equal(kept.status, 'done')
+    assert.equal(kept.note, '通勤路上背的')
+    assert.equal(kept.id, plan.items[0].id, 'id 应沿用，别人攥着的 itemId 不该突然失效')
+    assert.equal(again.items.find(item => item.title === '新加的一条').status, 'pending')
+  })
+})

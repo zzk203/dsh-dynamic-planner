@@ -659,3 +659,59 @@ describe('createStore 存储门面', () => {
     assert.equal(after.goals[0].title, '第一个')
   })
 })
+
+// ───────────────────────── 重排不能抹掉已勾选的进度 ─────────────────────────
+
+describe('重排今日计划时的进度保全（铁律一）', () => {
+  it('重排后，仍在计划里的条目保留状态、备注与未完成原因', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 15 })
+    const plan = writePlan(data, '2026-05-10', [
+      { taskId: task.id, title: '背单词', estimateMin: 15 },
+    ], '2026-05-10')
+    updatePlanItem(data, '2026-05-10', plan.items[0].id, { status: 'done', note: '通勤路上背的' })
+
+    // 用户又说了一次"排今天的计划" —— 这在真实使用里每天都会发生
+    const again = writePlan(data, '2026-05-10', [
+      { taskId: task.id, title: '背单词', estimateMin: 15 },
+      { title: '新加的一条', estimateMin: 10 },
+    ], '2026-05-10')
+
+    const kept = again.items.find(item => item.title === '背单词')
+    assert.equal(kept.status, 'done', '已完成状态必须保留')
+    assert.equal(kept.note, '通勤路上背的', '备注必须保留')
+    assert.ok(kept.completedAt, '完成时间戳必须保留')
+    const added = again.items.find(item => item.title === '新加的一条')
+    assert.equal(added.status, 'pending', '新条目才是 pending')
+  })
+
+  it('没带 taskId 时按标题匹配，同样保留（模型经常只给标题）', () => {
+    const data = emptyData()
+    const plan = writePlan(data, '2026-05-10', [{ title: '打电话', estimateMin: 10 }], '2026-05-10')
+    updatePlanItem(data, '2026-05-10', plan.items[0].id, { status: 'missed', reason: '忘了' })
+    const again = writePlan(data, '2026-05-10', [{ title: '打电话', estimateMin: 10 }], '2026-05-10')
+    assert.equal(again.items[0].status, 'missed')
+    assert.equal(again.items[0].reason, '忘了')
+  })
+
+  it('已完成条目不允许被重排悄悄丢掉（否则用户的勾选会无声蒸发）', () => {
+    const data = emptyData()
+    const plan = writePlan(data, '2026-05-10', [{ title: '打电话', estimateMin: 10 }], '2026-05-10')
+    updatePlanItem(data, '2026-05-10', plan.items[0].id, { status: 'done' })
+    assert.throws(
+      () => writePlan(data, '2026-05-10', [{ title: '完全不同的事', estimateMin: 10 }], '2026-05-10'),
+      /已完成/,
+    )
+  })
+
+  it('未完成的条目可以被换掉（重排的意义就在这里），但仍会回到池里', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 15 })
+    const plan = writePlan(data, '2026-05-10', [{ taskId: task.id, title: '背单词', estimateMin: 15 }], '2026-05-10')
+    updatePlanItem(data, '2026-05-10', plan.items[0].id, { status: 'missed' })
+    assert.doesNotThrow(
+      () => writePlan(data, '2026-05-10', [{ title: '换成别的事', estimateMin: 10 }], '2026-05-10'),
+    )
+    assert.equal(task.status, 'pool')
+  })
+})
