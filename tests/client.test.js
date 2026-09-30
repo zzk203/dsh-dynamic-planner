@@ -335,6 +335,29 @@ describe('目标总览（二级视图）', { skip: missing ? '环境里没有 re
   })
 })
 
+// ───────────────────────── 顶层组件 ─────────────────────────
+
+describe('顶层组件 Panel', { skip: missing ? '环境里没有 react / react-dom' : false }, () => {
+  it('首帧不崩，且显示"读取中"而不是会被误读的假结论', () => {
+    const { exported } = buildModule()
+    // useState 的初始值在 SSR 下就是首帧真实状态：state 还没拿到
+    const markup = html(h(exported.__internals.Panel))
+    assert.match(markup, /日程表/, '标题')
+    assert.match(markup, /读取中/, '首帧该说在读，而不是"今天还没有计划"')
+    assert.ok(!markup.includes('今天还没有计划'), '数据没到之前不该下这个结论')
+    assert.match(markup, /今天/)
+    assert.match(markup, /目标/)
+  })
+
+  it('两个页签都在，且按钮可点（不是 disabled 的死界面）', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.Panel))
+    const buttons = markup.match(/<button/g) ?? []
+    assert.ok(buttons.length >= 3, `至少有 刷新/今天/目标 三个按钮，实际 ${buttons.length}`)
+    assert.ok(!/<button[^>]*disabled/.test(markup), '首帧不该有被禁用的按钮挡住用户')
+  })
+})
+
 // ───────────────────────── 铁律四全局守卫 ─────────────────────────
 
 describe('铁律四全局守卫', { skip: missing ? '环境里没有 react / react-dom' : false }, () => {
