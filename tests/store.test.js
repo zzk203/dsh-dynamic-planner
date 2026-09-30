@@ -16,6 +16,7 @@ import {
   clampDial,
   completeGoal,
   createStore,
+  deferStreak,
   dateKey,
   daysBetween,
   emptyData,
@@ -205,7 +206,7 @@ describe('任务池', () => {
     const task = saveTask(data, { title: '背单词' })
     assert.equal(task.status, 'pool')
     assert.equal(task.goalId, null)
-    assert.equal(task.deferCount, 0)
+    assert.equal(deferStreak(data, task.id), 0)
     assert.equal(task.plannedFor, null)
   })
 
@@ -284,26 +285,16 @@ describe('计划项状态回流任务池', () => {
     const plan = writePlan(data, '2026-05-10', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-10')
     updatePlanItem(data, '2026-05-10', plan.items[0].id, { status: 'done' })
     assert.equal(task.status, 'done')
-    assert.equal(task.deferCount, 0)
+    assert.equal(deferStreak(data, task.id), 0)
   })
 
-  it('未完成 → 任务回池，顺延计数 +1（这是 §4.6 异常上报的计数来源）', () => {
+  it('未完成 → 任务回池', () => {
     const data = emptyData()
     const task = saveTask(data, { title: '背单词', estimateMin: 20 })
     const plan = writePlan(data, '2026-05-10', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-10')
     updatePlanItem(data, '2026-05-10', plan.items[0].id, { status: 'missed' })
     assert.equal(task.status, 'pool')
-    assert.equal(task.deferCount, 1)
     assert.equal(task.plannedFor, null)
-  })
-
-  it('完成会清零累积的顺延计数', () => {
-    const data = emptyData()
-    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
-    task.deferCount = 3
-    const plan = writePlan(data, '2026-05-10', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-10')
-    updatePlanItem(data, '2026-05-10', plan.items[0].id, { status: 'done' })
-    assert.equal(task.deferCount, 0)
   })
 })
 
@@ -345,10 +336,14 @@ describe('§4.3 排今日计划的输入', () => {
   it('今天没排过的池任务会出现在 pool 里，并带顺延次数', () => {
     const data = emptyData()
     const task = saveTask(data, { title: '背单词', estimateMin: 20 })
-    task.deferCount = 2
+    // 让它连续两天被排进计划却都没完成
+    for (const date of ['2026-05-08', '2026-05-09']) {
+      const plan = writePlan(data, date, [{ taskId: task.id, title: '背单词', estimateMin: 20 }], date)
+      updatePlanItem(data, date, plan.items[0].id, { status: 'missed' })
+    }
     const view = todayView(data, '2026-05-10')
     assert.equal(view.pool.length, 1)
-    assert.equal(view.pool[0].deferCount, 2)
+    assert.equal(view.pool[0].deferCount, 2, '顺延次数应是算出来的')
   })
 })
 
@@ -713,5 +708,79 @@ describe('重排今日计划时的进度保全（铁律一）', () => {
       () => writePlan(data, '2026-05-10', [{ title: '换成别的事', estimateMin: 10 }], '2026-05-10'),
     )
     assert.equal(task.status, 'pool')
+  })
+})
+
+// ───────────────────────── 顺延次数：算出来，而不是累加出来 ─────────────────────────
+
+describe('顺延次数的口径（§4.6 上报的计数来源）', () => {
+  it('从未被标记、只是被反复重排的 pending 条目也要计入', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
+    // 三次被排进计划，用户一次都没碰过 —— 这是顺延最常见的形态
+    for (const date of ['2026-05-07', '2026-05-08', '2026-05-09']) {
+      writePlan(data, date, [{ taskId: task.id, title: '背单词', estimateMin: 20 }], date)
+    }
+    assert.equal(deferStreak(data, task.id), 3, '没人动它也是一种顺延，而且是最常见的那种')
+  })
+
+  it('重复标记同一条 missed 不会把计数刷高（幂等）', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
+    const plan = writePlan(data, '2026-05-09', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-09')
+    updatePlanItem(data, '2026-05-09', plan.items[0].id, { status: 'missed' })
+    updatePlanItem(data, '2026-05-09', plan.items[0].id, { status: 'missed' })
+    updatePlanItem(data, '2026-05-09', plan.items[0].id, { status: 'missed', reason: '忘了' })
+    assert.equal(deferStreak(data, task.id), 1, '同一条重复标记只算一次')
+  })
+
+  it('一旦完成，连续计数清零（只数最近这一段连续未完成）', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
+    for (const date of ['2026-05-07', '2026-05-08']) {
+      const plan = writePlan(data, date, [{ taskId: task.id, title: '背单词', estimateMin: 20 }], date)
+      updatePlanItem(data, date, plan.items[0].id, { status: 'missed' })
+    }
+    const doneDay = writePlan(data, '2026-05-09', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-09')
+    updatePlanItem(data, '2026-05-09', doneDay.items[0].id, { status: 'done' })
+    assert.equal(deferStreak(data, task.id), 0)
+  })
+
+  it('没被排进计划的日子不算顺延（不要求日历连续）', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
+    for (const date of ['2026-05-01', '2026-05-09']) {
+      const plan = writePlan(data, date, [{ taskId: task.id, title: '背单词', estimateMin: 20 }], date)
+      updatePlanItem(data, date, plan.items[0].id, { status: 'missed' })
+    }
+    assert.equal(deferStreak(data, task.id), 2, '数的是"排了没做"的次数，不是日历天数')
+  })
+
+  it('没被排过计划的任务顺延为 0', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
+    assert.equal(deferStreak(data, task.id), 0)
+  })
+})
+
+describe('顺延次数不含今天', () => {
+  it('今天还没过完，今天那条 pending 不算顺延（否则昨天拖一次今天就显示两次）', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
+    const y = writePlan(data, '2026-05-09', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-09')
+    updatePlanItem(data, '2026-05-09', y.items[0].id, { status: 'missed' })
+    writePlan(data, '2026-05-10', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-10')
+
+    assert.equal(deferStreak(data, task.id, '2026-05-10'), 1, '只该算昨天那一次')
+    assert.equal(deferStreak(data, task.id), 2, '不传 today 时是全量口径')
+  })
+
+  it('今日视图里的顺延次数用的就是不含今天的口径', () => {
+    const data = emptyData()
+    const task = saveTask(data, { title: '背单词', estimateMin: 20 })
+    const y = writePlan(data, '2026-05-09', [{ taskId: task.id, title: '背单词', estimateMin: 20 }], '2026-05-09')
+    updatePlanItem(data, '2026-05-09', y.items[0].id, { status: 'missed' })
+    const view = todayView(data, '2026-05-10')
+    assert.equal(view.pool[0].deferCount, 1)
   })
 })
