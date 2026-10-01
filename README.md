@@ -31,7 +31,7 @@
 | `lib/paths.js` | 数据文件路径（`dshHomePath` 的本地替代） |
 | `lib/tools.js` | 9 个 LLM 工具 |
 | `lib/prompt.js` | `systemPrompt` 的静态 section（铁律）与动态 context（今日摘要） |
-| `lib/routes.js` | 面板读写的 4 个 HTTP 端点 |
+| `lib/routes.js` | 面板读写的 5 个 HTTP 端点 |
 | `lib/plugin.js` | 装配：把上面这些接到 Cordis 上下文 |
 | `client.js` | 面板：侧边栏入口 + 中央面板 |
 

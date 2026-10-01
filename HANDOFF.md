@@ -26,7 +26,7 @@
 
 - 23+ 次提交，已推送到 `git@github.com:zzk203/dsh-dynamic-planner.git`（origin 的 push 走 SSH，fetch 走 HTTPS）
 - 测试：源码目录 `npm test` 全绿；接上 shipped 包与 React 后用例更多
-- 已装进 `web` profile 并现场验证：9 个工具在 Agent 工具列表里、section 在系统提示里、4+1 个 HTTP 端点全通、面板在真实浏览器里渲染并写回
+- 已装进 `web` profile 并现场验证：9 个工具在 Agent 工具列表里、section 在系统提示里、5 个 HTTP 端点全通、面板在真实浏览器里渲染并写回
 
 ## 动手前必须知道的四个坑
 
