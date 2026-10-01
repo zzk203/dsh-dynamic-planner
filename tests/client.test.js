@@ -490,3 +490,53 @@ describe('随手添加的待办必须出现在面板上', { skip: missing ? '环
     assert.match(markup, /随手加一条待办/)
   })
 })
+
+// ───────────────────────── 目标总览的「标记完成」按钮 ─────────────────────────
+
+describe('目标总览的「标记完成」按钮', { skip: missing ? '环境里没有 react / react-dom' : false }, () => {
+  const active = {
+    id: 'g1', title: '学英语', criteria: '能看无字幕剧', mode: 'longterm', status: 'active',
+    deadline: null, poolTaskCount: 0, doneTaskCount: 0, pace: null,
+    momentum: { total: 2, streak: 2, visible: false, nextMilestone: 5 },
+  }
+
+  it('活跃目标上有一个能点的「标记完成」', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.GoalCard, { goal: active, onComplete: async () => {} }))
+    assert.match(markup, /标记完成/)
+    assert.match(markup, /<button/)
+  })
+
+  it('已完成的目标不再有这个按钮（不能重复标记）', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.GoalCard, {
+      goal: { ...active, status: 'done' }, onComplete: async () => {},
+    }))
+    assert.ok(!markup.includes('标记完成'))
+  })
+
+  it('按钮说清它标记的是"目标"，不是一个没头没尾的「完成」', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.GoalCard, { goal: active, onComplete: async () => {} }))
+    assert.ok(!/>完成</.test(markup), '不要只写「完成」，容易和计划项的勾选混淆')
+  })
+
+  it('没给 onComplete 时不渲染按钮（组件本身不强依赖这个能力）', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.GoalCard, { goal: active }))
+    assert.ok(!markup.includes('标记完成'))
+  })
+
+  it('GoalCard 被放在 GoalCard 的导出里，说明它拿得到回调', () => {
+    const { exported } = buildModule()
+    assert.equal(typeof exported.__internals.GoalCard, 'function')
+    assert.equal(typeof exported.__internals.GoalsView, 'function')
+  })
+
+  it('铁律四不因这个按钮松动：长期目标仍未达门槛，一个计数都不出现', () => {
+    const { exported } = buildModule()
+    const markup = html(h(exported.__internals.GoalCard, { goal: active, onComplete: async () => {} }))
+    assert.ok(!markup.includes('已坚持'))
+    assert.ok(!markup.includes('累计'))
+  })
+})

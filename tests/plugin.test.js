@@ -162,10 +162,10 @@ describe('装配：提示词', () => {
 // ───────────────────────── 路由挂载 ─────────────────────────
 
 describe('装配：路由', () => {
-  it('宿主有 webServer 时挂上 4 个端点，并把 version 透出去', async () => {
+  it('宿主有 webServer 时挂上 5 个端点，并把 version 透出去', async () => {
     const { record } = applyTo()
     assert.deepEqual(record.injected, [['webServer']])
-    assert.equal(record.routes.length, 4)
+    assert.equal(record.routes.length, 5)
     assert.ok(record.routes.every(route => route.path.startsWith(API_PREFIX)))
 
     const state = record.routes.find(route => route.path.endsWith('/state'))

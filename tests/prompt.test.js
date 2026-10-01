@@ -247,3 +247,82 @@ describe('§4.5 要告诉模型旋钮在哪、依据是什么', () => {
     assert.match(text, /盲调/, '要说清没有反馈就是盲调')
   })
 })
+
+// ───────────────────────── 摘要不能把同一件事重复列 ─────────────────────────
+
+describe('今日摘要的去重', () => {
+  it('同一条任务被顺延多天时，摘要里只出现一次（否则模型会问两遍同一件事）', () => {
+    const data = emptyData()
+    const goal = saveGoal(data, { title: '学英语', mode: 'longterm' }, '2026-05-01')
+    const task = saveTask(data, { title: '跟读 3 句台词', goalId: goal.id, estimateMin: 5 })
+    // 连续两天排进计划都没做
+    for (const date of ['2026-05-08', '2026-05-09']) {
+      const plan = writePlan(data, date, [{ taskId: task.id, title: '跟读 3 句台词', estimateMin: 5, goalId: goal.id }], date)
+      updatePlanItem(data, date, plan.items[0].id, { status: 'missed' })
+    }
+    const text = buildContextText(data, '2026-05-10')
+    const occurrences = text.split('跟读 3 句台词').length - 1
+    assert.equal(occurrences, 1, `同一件事只该列一次，实际出现 ${occurrences} 次：\n${text}`)
+    assert.match(text, /往日未完成 1 条/, '计数也该按"事情"算，不是按"条目"算')
+  })
+
+  it('没带 taskId 的独立待办按标题去重（同一件事不该算两件）', () => {
+    const data = emptyData()
+    for (const date of ['2026-05-08', '2026-05-09']) {
+      writePlan(data, date, [{ title: '给妈妈打电话', estimateMin: 10 }], date)
+    }
+    const text = buildContextText(data, '2026-05-10')
+    assert.equal(text.split('给妈妈打电话').length - 1, 1)
+    assert.match(text, /往日未完成 1 条/)
+  })
+
+  it('确实是两件不同的事就都列出来', () => {
+    const data = emptyData()
+    writePlan(data, '2026-05-09', [
+      { title: '给妈妈打电话', estimateMin: 10 },
+      { title: '预约体检', estimateMin: 20 },
+    ], '2026-05-09')
+    const text = buildContextText(data, '2026-05-10')
+    assert.match(text, /往日未完成 2 条/)
+    assert.ok(text.includes('给妈妈打电话') && text.includes('预约体检'))
+  })
+})
+
+// ───────────────────────── 用户决定：直接问就给直观进展 ─────────────────────────
+
+describe('§4.7：门槛只管主动展示，不拦用户直接问', () => {
+  it('写明用户直接问进展时照实说（门槛不是让他瞒着）', () => {
+    const text = buildSectionText()
+    assert.match(text, /直接问/, '要有一条专门讲"用户直接问"的情形')
+    assert.match(text, /照实说|直接告诉他|直说/, '要说清这时候该给')
+  })
+
+  it('即便如此，仍然不给百分比与落后提示（铁律四的底线不因用户问了而放开）', () => {
+    const text = buildSectionText()
+    const section = text.slice(text.indexOf('用户直接问') - 400, text.indexOf('用户直接问') + 400)
+    assert.match(section, /百分比/)
+  })
+})
+
+// ───────────────────────── 对话里打勾 + 整理备注的工作流 ─────────────────────────
+
+describe('用户在对话里说"我做完了"', () => {
+  it('说明要标成 done —— 用户的明确陈述等同于他自己勾选（铁律一）', () => {
+    const text = buildSectionText()
+    assert.match(text, /做完了|完成了/, '要有这条工作流')
+    assert.match(text, /plan_item_update/)
+    assert.match(text, /等同于/, '要讲清为什么模型有权这么做')
+  })
+
+  it('说明要顺手问一句想法，并整理进 note', () => {
+    const text = buildSectionText()
+    assert.match(text, /note/)
+    assert.match(text, /想法|感受|心得/)
+  })
+
+  it('问一次就够，用户不说就算了 —— 不要替他编（铁律二）', () => {
+    const text = buildSectionText()
+    assert.match(text, /只问一次|问一次/)
+    assert.match(text, /不要替他编|不要编/)
+  })
+})

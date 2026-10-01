@@ -300,7 +300,7 @@ window.__ModuleLoader__.load({
 
     // ───────────────────────── 目标总览（二级） ─────────────────────────
 
-    function GoalCard({ goal }) {
+    function GoalCard({ goal, onComplete }) {
       const facts = []
       if (goal.mode === 'deadline' && goal.deadline) facts.push(`截止 ${goal.deadline}`)
       if (goal.poolTaskCount > 0) facts.push(`池里还有 ${goal.poolTaskCount} 条`)
@@ -310,6 +310,16 @@ window.__ModuleLoader__.load({
           h('span', { className: 'pl-goal-title' }, goal.title),
           h('span', { className: 'pl-chip' }, goal.mode === 'deadline' ? '有期限' : '长期'),
           goal.status === 'done' ? h('span', { className: 'pl-chip' }, '已完成') : null,
+          h('span', { className: 'pl-spacer' }),
+          // 铁律一说目标完成只能由用户拍板 —— 这个按钮就是最直接的拍板方式，
+          // 比"在对话里说一句、再让模型调 goal_complete"更硬。
+          goal.status === 'active' && typeof onComplete === 'function'
+            ? h('button', {
+                className: 'pl-btn', type: 'button',
+                title: '把「' + goal.title + '」标记为已完成',
+                onClick: () => { void onComplete(goal.id) },
+              }, '标记完成')
+            : null,
         ),
         goal.criteria ? h('div', { className: 'pl-goal-criteria' }, goal.criteria) : null,
         facts.length > 0 ? h('div', { className: 'pl-goal-facts' }, facts.join(' · ')) : null,
@@ -331,12 +341,13 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function GoalsView({ goals }) {
+    function GoalsView({ goals, onComplete }) {
       if (goals.length === 0) {
         return h('div', { className: 'pl-card pl-empty' },
           '还没有目标。在对话里说一句你想做的事（哪怕很模糊），我会先帮你问清楚，再落成一个目标。')
       }
-      return h('div', { className: 'pl-card' }, goals.map(goal => h(GoalCard, { key: goal.id, goal })))
+      return h('div', { className: 'pl-card' },
+        goals.map(goal => h(GoalCard, { key: goal.id, goal, onComplete })))
     }
 
     // ───────────────────────── 面板 ─────────────────────────
@@ -370,6 +381,17 @@ window.__ModuleLoader__.load({
           setError(String(problem?.message ?? problem))
         }
       }, [])
+
+      const completeGoal = useCallback(async (goalId) => {
+        try {
+          await call('/goal/complete', { method: 'POST', body: JSON.stringify({ goalId }) })
+          // 目标完成会连带影响今日视图（它不再出现），所以两边都刷
+          await loadGoals()
+          await load()
+        } catch (problem) {
+          setError(String(problem?.message ?? problem))
+        }
+      }, [load, loadGoals])
 
       useEffect(() => { void load() }, [load])
 
@@ -418,7 +440,7 @@ window.__ModuleLoader__.load({
             ? h('div', { className: 'pl-card pl-empty' }, '读取中…')
             : view === 'today'
               ? h(TodayView, { today, onRefresh: load, onError: setError })
-              : h(GoalsView, { goals: goals ?? [] }),
+              : h(GoalsView, { goals: goals ?? [], onComplete: completeGoal }),
 
           version ? h('div', { className: 'pl-stale', style: { marginTop: 28 } },
             `插件版本 ${version} · 数据文件在 ~/.dsh/dynamic-planner/data.json`) : null,

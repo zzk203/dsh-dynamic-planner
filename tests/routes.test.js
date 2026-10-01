@@ -42,11 +42,11 @@ describe('路由表', () => {
     assert.equal(API_PREFIX, '/dynamic-planner/api')
   })
 
-  it('恰好暴露 4 个端点，方法明确', () => {
+  it('恰好暴露 5 个端点，方法明确', () => {
     const table = routesFor(memoryStore())
     assert.deepEqual(
       table.map(entry => `${entry.method} ${entry.path}`).sort(),
-      ['GET /goals', 'GET /state', 'POST /item', 'POST /task'],
+      ['GET /goals', 'GET /state', 'POST /goal/complete', 'POST /item', 'POST /task'],
     )
   })
 
@@ -56,8 +56,12 @@ describe('路由表', () => {
     for (const forbidden of ['/goal', '/goals/create', '/task/batch', '/plan']) {
       assert.ok(!paths.includes(forbidden), `面板不该能 ${forbidden}`)
     }
-    // 创建类端点一律不存在；写操作只有"改一条已有条目"和"随手加一条待办"
-    assert.deepEqual(table.filter(entry => entry.method === 'POST').map(entry => entry.path).sort(), ['/item', '/task'])
+    // 写操作就这三个。`/goal/complete` 是用户明确要求的（"加标记完成按钮"）：
+    // 它不新建任何东西，只是把"用户拍板"这件事从对话挪到按钮上 —— 铁律一反而更硬。
+    assert.deepEqual(
+      table.filter(entry => entry.method === 'POST').map(entry => entry.path).sort(),
+      ['/goal/complete', '/item', '/task'],
+    )
   })
 })
 
@@ -241,7 +245,8 @@ describe('传输层 dispatch', () => {
     const host = fakeHost()
     const dispose = mountRoutes(host, { store: memoryStore(), now: () => TODAY })
     assert.deepEqual(host.registered.map(route => route.path).sort(), [
-      `${API_PREFIX}/goals`, `${API_PREFIX}/item`, `${API_PREFIX}/state`, `${API_PREFIX}/task`,
+      `${API_PREFIX}/goal/complete`, `${API_PREFIX}/goals`, `${API_PREFIX}/item`,
+      `${API_PREFIX}/state`, `${API_PREFIX}/task`,
     ])
     assert.ok(host.registered.every(route => route.kind === 'exact'))
     dispose()
@@ -308,5 +313,54 @@ describe('传输层 dispatch', () => {
     await route.handler(req, res)
     assert.equal(res.status, 400)
     assert.match(res.json().error, /JSON/)
+  })
+})
+
+// ───────────────────────── POST /goal/complete ─────────────────────────
+
+describe('POST /goal/complete（面板上的「标记完成」按钮）', () => {
+  function seeded() {
+    const store = memoryStore()
+    const goal = saveGoal(store.data, { title: '学英语', mode: 'longterm' }, TODAY)
+    saveTask(store.data, { title: '背单词', goalId: goal.id, estimateMin: 15 })
+    return { store, goal }
+  }
+
+  it('把目标标成完成 —— 点击本身就是用户的确认，所以这里合法地传 true', async () => {
+    const { store, goal } = seeded()
+    const value = await handlerFor(routesFor(store), 'POST', '/goal/complete')({ body: { goalId: goal.id } })
+    assert.equal(value.ok, true)
+    assert.equal(value.goal.status, 'done')
+    assert.ok(value.goal.completedAt)
+    assert.equal(store.data.goals[0].status, 'done')
+  })
+
+  it('目标名下还在池里的任务一并移出池（不会再被排进任何计划）', async () => {
+    const { store, goal } = seeded()
+    await handlerFor(routesFor(store), 'POST', '/goal/complete')({ body: { goalId: goal.id } })
+    assert.equal(store.data.tasks[0].status, 'dropped')
+  })
+
+  it('缺 goalId 时给出能看懂的错误', async () => {
+    const { store } = seeded()
+    await assert.rejects(
+      () => handlerFor(routesFor(store), 'POST', '/goal/complete')({ body: {} }),
+      /goalId/,
+    )
+  })
+
+  it('目标不存在时报错，不静默成功', async () => {
+    const { store } = seeded()
+    await assert.rejects(
+      () => handlerFor(routesFor(store), 'POST', '/goal/complete')({ body: { goalId: 'goal_nope' } }),
+      /不存在/,
+    )
+  })
+
+  it('已完成的目标不出现在 /state 的今日视图里', async () => {
+    const { store, goal } = seeded()
+    await handlerFor(routesFor(store), 'POST', '/goal/complete')({ body: { goalId: goal.id } })
+    const state = await handlerFor(routesFor(store), 'GET', '/state')({ params: params() })
+    assert.deepEqual(state.today.goals, [])
   })
 })
